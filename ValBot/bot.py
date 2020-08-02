@@ -13,7 +13,7 @@ MATCH_HISTORY_PATH = os.path.join(BASE_DIR, 'ValBot/data/match_history.txt')
 def writeRoster(roster):
 	with open(ROSTER_PATH, 'w') as file:
 		for player in roster:
-			file.write(player + '\n')
+			file.write(player)
 			
 # returns roster list
 def getRoster():
@@ -78,6 +78,9 @@ async def leave(ctx):
 @bot.command(name='roster', help='List roster')
 @commands.check(checkChannelActive)
 async def roster(ctx):
-	await ctx.send(f"Roster: {getRoster()}")
+	player_string = ''
+	for player in getRoster():
+		player_string += player + '\n'
+	await ctx.send(f"Roster:\n{player_string}")
 	
 bot.run(TOKEN)
