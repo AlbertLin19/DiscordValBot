@@ -18,8 +18,14 @@ def writeRoster(roster):
 			
 # returns roster list
 def getRoster():
-	with open(ROSTER_PATH, 'rb') as file:
-		return pickle.load(file)
+	try:
+		with open(ROSTER_PATH, 'rb') as file:
+			return pickle.load(file)
+
+	except Exception as e:
+		print(e)
+		print(f'error with unpickling "{ROSTER_PATH}", returning an empty roster')
+		return []
 
 # add player to roster list
 def addRoster(player):
@@ -61,9 +67,9 @@ async def join(ctx):
 	player = ctx.author.name
 	added = addRoster(player)
 	if added:
-		await ctx.send(f"{player} has joined ValBot's roster!")
+		await ctx.send(f"'{player}' has joined ValBot's roster!")
 	else:
-		await ctx.send(f"{player} is already on ValBot's roster!")
+		await ctx.send(f"'{player}' is already on ValBot's roster!")
 
 @bot.command(name='leave', help='Leave roster')
 @commands.check(checkChannelActive)
@@ -71,9 +77,9 @@ async def leave(ctx):
 	player = ctx.author.name
 	left = leaveRoster(player)
 	if left:
-		await ctx.send(f"{player} has left ValBot's roster! :sob:")
+		await ctx.send(f"'{player}' has left ValBot's roster! :sob:")
 	else:
-		await ctx.send(f"{player} is already not on ValBot's roster! :sob:")
+		await ctx.send(f"'{player}' is already not on ValBot's roster! :sob:")
 
 @bot.command(name='roster', help='List roster')
 @commands.check(checkChannelActive)
