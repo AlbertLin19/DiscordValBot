@@ -8,6 +8,13 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROSTER_PATH = os.path.join(BASE_DIR, 'ValBot/data/roster.txt')
 MATCH_HISTORY_PATH = os.path.join(BASE_DIR, 'ValBot/data/match_history.txt')
+
+# write a roster out
+def writeRoster(roster):
+	with open(ROSTER_PATH, 'w') as file:
+		for player in roster:
+			file.write(player + '\n')
+			
 # returns roster list
 def getRoster():
 	roster = []
@@ -20,12 +27,9 @@ def getRoster():
 def addRoster(player):
 	roster = getRoster()
 	if player not in roster:
-		with open(ROSTER_PATH, 'w') as file:
-			for rosterPlayer in roster:
-				file.write(str(rosterPlayer))
-				file.write("\n")
-			file.write(str(player) + '\n')
-			return True
+		roster.append(player)
+		writeRoster(roster)
+		return True
 	return False
 	
 # remove player from roster list
@@ -33,9 +37,7 @@ def leaveRoster(player):
 	roster = getRoster()
 	if player in roster:
 		roster.remove(player)
-		with open(ROSTER_PATH, 'w') as file:
-			for rosterPlayer in roster:
-				file.write(str(rosterPlayer) + '\n')
+		writeRoster(roster)
 		return True
 	return False
 
@@ -58,20 +60,20 @@ def checkChannelActive(ctx):
 @bot.command(name='join', help='Join roster')
 @commands.check(checkChannelActive)
 async def join(ctx):
-	added = addRoster(ctx.author)
+	added = addRoster(ctx.author.name)
 	if added:
-		await ctx.send(f"{ctx.author} has joined ValBot's roster!")
+		await ctx.send(f"{ctx.author.name} has joined ValBot's roster!")
 	else:
-		await ctx.send(f"{ctx.author} is already on ValBot's roster!")
+		await ctx.send(f"{ctx.author.name} is already on ValBot's roster!")
 
 @bot.command(name='leave', help='Leave roster')
 @commands.check(checkChannelActive)
 async def leave(ctx):
-	left = leaveRoster(ctx.author)
+	left = leaveRoster(ctx.author.name)
 	if left:
-		await ctx.send(f"{ctx.auathor} has left ValBot's roster! :sob:")
+		await ctx.send(f"{ctx.author.name} has left ValBot's roster! :sob:")
 	else:
-		await ctx.send(f"{ctx.author} is already not on ValBot's roster! :sob:")
+		await ctx.send(f"{ctx.author.name} is already not on ValBot's roster! :sob:")
 
 @bot.command(name='roster', help='List roster')
 @commands.check(checkChannelActive)
