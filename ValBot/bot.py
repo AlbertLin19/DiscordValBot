@@ -2,6 +2,10 @@ import os
 import discord
 from discord.ext import commands
 import pickle
+import extract
+import datetime
+import requests
+import cv2
 
 bot = commands.Bot(command_prefix='!')
 TOKEN = os.getenv('DISCORD_TOKEN')
@@ -10,6 +14,8 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROSTER_PATH = os.path.join(BASE_DIR, 'ValBot/data/roster.txt')
 MATCH_HISTORY_PATH = os.path.join(BASE_DIR, 'ValBot/data/match_history.txt')
+IMG_PATH = os.path.join(BASE_DIR, 'ValBot/imgs/pre/')
+POST_IMG_PATH = os.path.join(BASE_DIR, 'ValBot/imgs/post/')
 
 # write a roster out
 def writeRoster(roster):
@@ -61,9 +67,9 @@ def checkChannelActive(ctx):
 		return False
 	return True
 
-@bot.command(name='join', help='Join roster')
+@bot.command(name='register', help='Register into the roster')
 @commands.check(checkChannelActive)
-async def join(ctx):
+async def register(ctx):
 	player = ctx.author.name
 	added = addRoster(player)
 	if added:
@@ -89,5 +95,49 @@ async def roster(ctx):
 	for i in range(len(roster)):
 		player_string += f"{i + 1}.   {roster[i]}\n"
 	await ctx.send(f"Roster ({len(roster)} players):\n{player_string}")
+
+current_img = ''  # path to current img to handle
+@bot.command(name='upload', help='Upload post game image for OCR')
+@commands.check(checkChannelActive)
+async def upload(ctx):
+    global current_img
+    time = datetime.datetime.now().strftime('%Y%m%d_%H%M')
+    if len(ctx.message.attachments) == 0:
+    	await ctx.channel.send('Please attach an image!')
+    	return
+    attach = ctx.message.attachments[0]
+    print(f'received upload: {attach.url}')
+    path_name = os.path.join(IMG_PATH, f'{time}.png')
+    with open(path_name, 'wb') as f:
+        f.write(requests.get(attach.url).content)
+    current_img = path_name
+    await ctx.channel.send('Image downloaded as "' + time + '.png"')
+    await ctx.channel.send('Either !process or !cancel...')
+
+@bot.command(name='process', help='Process img after !upload')
+@commands.check(checkChannelActive)
+async def process(ctx):
+	global current_img
+	if current_img == '':
+		await ctx.channel.send('No img currently active, please !upload')
+		return
+	await ctx.channel.send('processing...')
+	data, img = extract.extract(current_img)
+	post_path = os.path.join(POST_IMG_PATH, (current_img.split("/")[-1]).split(".")[0] + '_post.png')
+	cv2.imwrite(post_path, img)
+	current_img = ''
+	await ctx.channel.send('done! sending results...')
+	await ctx.channel.send(file=discord.File(post_path))
+
+@bot.command(name='cancel', help='Cancel img after !upload')
+@commands.check(checkChannelActive)
+async def cancel(ctx):
+	global current_img
+	if current_img == '':
+		await ctx.channel.send('No img currently active to cancel!')
+		return
+	current_img = ''
+	await ctx.channel.send('Img has been cancelled!')
+
 	
 bot.run(TOKEN)

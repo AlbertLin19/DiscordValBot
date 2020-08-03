@@ -70,12 +70,12 @@ def extract(img_path):
 				blue += color_region[y_coord, x_coord, 0]
 			if red > blue:
 				color = 'red'
-				cv2.putText(imRects, f'red', (cx, cy + int(ch*1.7)), cv2.FONT_HERSHEY_SIMPLEX, .4, text_color, 1)
+				cv2.putText(imRects, f'red', (cx + w, cy), cv2.FONT_HERSHEY_SIMPLEX, .4, (100, 100, 255), 1)
 			else:
 				color = 'blue'
-				cv2.putText(imRects, f'blue', (cx, cy + int(ch*1.7)), cv2.FONT_HERSHEY_SIMPLEX, .4, text_color, 1)
+				cv2.putText(imRects, f'blue', (cx + w, cy), cv2.FONT_HERSHEY_SIMPLEX, .4, (255, 255, 100), 1)
 		
-			cv2.putText(imRects, f'{text}', (x, y + int(h*1.7)), cv2.FONT_HERSHEY_SIMPLEX, .4, text_color, 1)
+			cv2.putText(imRects, f'{text}', (x + w, y), cv2.FONT_HERSHEY_SIMPLEX, .4, (150, 255, 150), 1)
 			data[text] = [int(y), color]
 
 	if len(data) != 10:
@@ -84,6 +84,8 @@ def extract(img_path):
 	print(data)
 		
 	# Looping through the data identified contours
+	widths = {} # key: text lengths, value: avg width to compare with contour widths later
+	lengths = {} # key: i, value: text length of ith contour
 	i = 0
 	for cnt in contours: 
 		i += 1
@@ -100,7 +102,6 @@ def extract(img_path):
 			cropped = cv2.dilate(cropped,kernel,iterations = 2)
 			cropped = cv2.bilateralFilter(cropped,9,75,75) # blur
 			cropped = 255 - cropped  # invert black and white
-			cv2.imshow(f'{i}', cropped)
 			
 			# apply OCR on cropped image
 			text = pytesseract.image_to_string(cropped, config=f"--psm 13 -c tessedit_char_whitelist=0123456789") 
@@ -115,10 +116,23 @@ def extract(img_path):
 					closest = player
 
 			data[closest].extend([x, text])
-	
-	print(data)
-	cv2.waitKey(0)
-	cv2.destroyAllWindows()
+			if len(text) not in widths:
+				widths[len(text)] = (len(text), 1)
+			else:
+				old_width, num = widths[len(text)]
+				widths[len(text)] = (((float(old_width)*num)+w)/(num + 1), num + 1)
+			lengths[i-1] = len(text)
+
+	print(widths)
+	# recolor if width mismatches
+	diff = 5
+	for i in range(len(contours)):
+		x, y, w, h = cv2.boundingRect(contours[i]) 
+		if x/float(imTess.shape[1]) >= 0.2: # for stats
+
+			avg_width = widths[lengths[i]][0] # avg width for this text length
+			if abs(w - avg_width) > diff:
+				cv2.rectangle(imRects, (x, y), (x + w, y + h), (150, 150, 255), 3)
 
 	# reformat the [y, color, x1, stat1, x2, stat2,...] into ordered [color, stat1, stat2, ...]
 	for key, value in data.items():
@@ -137,7 +151,4 @@ def extract(img_path):
 
 	print('FINAL DATA:')
 	print(data)
-	cv2.imshow(f'FINAL IMAGE', imRects)
-	cv2.waitKey(0)
-	cv2.destroyAllWindows()
 	return data, imRects
