@@ -1,55 +1,19 @@
 import os
 import discord
 from discord.ext import commands
-import pickle
 import extract
+from storage import writeRoster, getRoster, addRoster, leaveRoster, linkRoster, unlinkRoster
 import datetime
 import requests
 import cv2
 
-bot = commands.Bot(command_prefix='!')
-TOKEN = os.getenv('DISCORD_TOKEN')
-
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ROSTER_PATH = os.path.join(BASE_DIR, 'ValBot/data/roster.txt')
-MATCH_HISTORY_PATH = os.path.join(BASE_DIR, 'ValBot/data/match_history.txt')
 IMG_PATH = os.path.join(BASE_DIR, 'ValBot/imgs/pre/')
 POST_IMG_PATH = os.path.join(BASE_DIR, 'ValBot/imgs/post/')
 
-# write a roster out
-def writeRoster(roster):
-	with open(ROSTER_PATH, 'wb') as file:
-		pickle.dump(roster, file)
-			
-# returns roster list
-def getRoster():
-	try:
-		with open(ROSTER_PATH, 'rb') as file:
-			return pickle.load(file)
-
-	except Exception as e:
-		print(e)
-		print(f'error with unpickling "{ROSTER_PATH}", returning an empty roster')
-		return []
-
-# add player to roster list
-def addRoster(player):
-	roster = getRoster()
-	if player not in roster:
-		roster.append(player)
-		writeRoster(roster)
-		return True
-	return False
-	
-# remove player from roster list
-def leaveRoster(player):
-	roster = getRoster()
-	if player in roster:
-		roster.remove(player)
-		writeRoster(roster)
-		return True
-	return False
+bot = commands.Bot(command_prefix='!')
+TOKEN = os.getenv('DISCORD_TOKEN')
 
 @bot.event
 async def on_ready():
@@ -67,17 +31,7 @@ def checkChannelActive(ctx):
 		return False
 	return True
 
-@bot.command(name='register', help='Register into the roster')
-@commands.check(checkChannelActive)
-async def register(ctx):
-	player = ctx.author.name
-	added = addRoster(player)
-	if added:
-		await ctx.send(f"'{player}' has joined ValBot's roster!")
-	else:
-		await ctx.send(f"'{player}' is already on ValBot's roster!")
-
-@bot.command(name='leave', help='Leave roster')
+@bot.command(name='leave', help='Remove your Discord account')
 @commands.check(checkChannelActive)
 async def leave(ctx):
 	player = ctx.author.name
@@ -92,9 +46,42 @@ async def leave(ctx):
 async def roster(ctx):
 	player_string = ''
 	roster = getRoster()
-	for i in range(len(roster)):
-		player_string += f"{i + 1}.   {roster[i]}\n"
-	await ctx.send(f"Roster ({len(roster)} players):\n{player_string}")
+	i = 0
+	for player, riotIDs in roster.items():
+		i+=1
+		player_string += f"{i + 1}.   {player}:\t\t\t{riotIDs}\n"
+	await ctx.send(f"Roster ({len(roster)} players):\nName:\t\t\tRiotIDs\n{player_string}")
+
+@bot.command(name='link', help='Link Riot ID to your Discord account')
+@commands.check(checkChannelActive)
+async def link(ctx, riotID=None):
+	player = ctx.author.name
+	addRoster(player)
+
+	if not riotID:
+		await ctx.send("Please retry, missing a riotID [  !link '<riotID>'  ]")
+		return
+
+	linked = linkRoster(player, riotID)
+	if linked:
+		await ctx.send(f"'{riotID}' has been linked to '{player}'!")
+	else:
+		await ctx.send(f"'{riotID}' is already linked with '{player}' or another player!")
+
+@bot.command(name='unlink', help='Unlink Riot ID from your Discord account')
+@commands.check(checkChannelActive)
+async def unlink(ctx, riotID=None):
+	player = ctx.author.name
+	addRoster(player)
+	if not riotID:
+		await ctx.send("Please retry, missing a riotID [  !unlink <riotID>  ]")
+		return
+		
+	unlinked = unlinkRoster(player, riotID)
+	if unlinked:
+		await ctx.send(f"'{riotID}' has been unlinked from {player}!")
+	else:
+		await ctx.send(f"'{riotID}' is already unlinked from {player}!")
 
 current_img = ''  # path to current img to handle
 @bot.command(name='upload', help='Upload post game image for OCR')
@@ -118,16 +105,113 @@ async def upload(ctx):
 @commands.check(checkChannelActive)
 async def process(ctx):
 	global current_img
+	data = {}  # holds the extracted info
+	detected_rosterIDs = [] # parallel arrays
+	detected_riotIDs = []
+
 	if current_img == '':
 		await ctx.channel.send('No img currently active, please !upload')
 		return
 	await ctx.channel.send('processing...')
-	data, img = extract.extract(current_img)
+	data, img, error = extract.extract(current_img)
+	if error:
+		await ctx.channel.send(f'{error}')
 	post_path = os.path.join(POST_IMG_PATH, (current_img.split("/")[-1]).split(".")[0] + '_post.png')
 	cv2.imwrite(post_path, img)
 	current_img = ''
 	await ctx.channel.send('done! sending results...')
 	await ctx.channel.send(file=discord.File(post_path))
+	if error:
+		await ctx.channel.send('quitting because of error')
+
+	# get list of players from data who are on roster
+	roster = getRoster()
+	for player, value in data.items():
+		for rosterID, riotIDs in roster.items():
+			if player in riotIDs:
+				detected_rosterIDs.append(rosterID)
+				detected_riotIDs.append(player)
+	detected_string = ''
+	for i in range(len(detected_rosterIDs)):
+		detected_string += f'{detected_rosterIDs[i]} as "{detected_riotIDs[i]}"\n'
+	await ctx.channel.send(f'roster members ({len(detected_rosterIDs)}) found:\n{detected_string}\n....................')
+
+	# get user input to confirm, cancel, or edit
+	def check(message):
+		return message.author == ctx.author and message.channel == ctx.channel
+	user_input = ''
+	attributes = ['color', 'score', 'K', 'D', 'A', 'econ', 'bloods', 'plants', 'defuses', 'name']
+	change_log = {} # formatted as nested dictionary, player key then attribute key
+	while user_input != 'confirm' and user_input != 'cancel':
+		await ctx.channel.send(f'RESPOND OPTIONS: [  confirm  ],\t [  cancel  ],\t [  edit <name>:<attribute>:<value>  ]\n\npossible names\n{list(data.keys())}\n\neditable attributes\n{attributes}')
+		user_input = str((await bot.wait_for('message', check=check)).content)
+
+		if user_input == 'confirm' or user_input == 'cancel':
+			continue
+
+		elif user_input[0:4] == 'edit':
+			# store the change, print all existing changes
+			name, attribute, value = (user_input.split(' ')[1]).split(':')
+			if name not in data:
+				await ctx.channel.send(f'{name} not a valid name, please try again')
+				continue
+			if attribute not in attributes:
+				await ctx.channel.send(f'{attribute} not a valid attribute, please try again')
+				continue
+			if name not in change_log:
+				change_log[name] = {}
+			change_log[name][attribute] = value
+			change_string = ''
+			for name, value in change_log.items():
+				change_string += f'{name}:\n'
+				for attr in value:
+					if attr == 'name':  # data does not store name, since it is its keys
+						change_string += f'\t{attr}: from "{name}" to "{value[attr]}"\n'
+					else:
+						change_string += f'\t{attr}: from "{data[name][attributes.index(attr)]}" to "{value[attr]}"\n'
+
+			await ctx.channel.send(f'Changes to be made:\n{change_string}\n....................')
+			continue
+
+		else:
+			await ctx.channel.send('invalid option, please try again')
+	if user_input == 'cancel':
+		current_img = ''
+		await ctx.channel.send('cancelled')
+
+	elif user_input == 'confirm':
+		user_input = ''
+		while user_input != 'blue' and user_input != 'red':
+			await ctx.channel.send("Who won? <blue/red>")
+			user_input = str((await bot.wait_for('message', check=check)).content)
+		winner = user_input
+
+		# change the data using change_log, then store the data
+		for name, value in change_log.items():
+			for attr, newVal in value.items():
+				if attr == 'name':
+					data[newVal] = data[name]
+					del data[name]
+				else:
+					data[name][attributes.index(attr)] = newVal
+
+		relevant_data = {} # filter only data whose key is on roster
+		for key, value in data.items():
+			for rosterID, riotIDs in roster.items():
+				if key in riotIDs:
+					relevant_data[rosterID] = value
+					value[0] = 1 if value[0] == winner else 0 # turn color to 0 or 1
+
+		save_string = ''
+		for rosterID, stats in relevant_data.items():
+			save_string += f'{rosterID}: {f"WON" if stats[0] == 1 else f"LOST"} {stats[1:]}\n'
+
+
+		await ctx.channel.send(f'SAVING:\n{save_string}')
+		await ctx.channel.send('FINISHED <NOT YET IMPLEMENTED>')
+
+
+
 
 @bot.command(name='cancel', help='Cancel img after !upload')
 @commands.check(checkChannelActive)
@@ -139,5 +223,51 @@ async def cancel(ctx):
 	current_img = ''
 	await ctx.channel.send('Img has been cancelled!')
 
-	
+whitelist = ['A_L__'] # people who can use admin commands
+@bot.command(name='admin', help='run commands as admin')
+@commands.check(checkChannelActive)
+async def admin(ctx, command=None, target=None, riotID=None):
+	if ctx.author.name not in whitelist:
+		await ctx.channel.send("Do 100 pushups a day and perhaps one day, you'll have this power as your own!")
+		return
+	if not command:
+		await ctx.channel.send("Need to specify a command! [  !admin <command> <parameters...>  ]")
+		return
+	commands = ['link', 'unlink', 'leave']
+	if command not in commands:
+		await ctx.channel.send(f"{command} is not a valid command! Try: {commands}")
+		return
+
+	if command == 'link':
+		if not target or not riotID:
+			await ctx.channel.send("Need to specify a target and/or riotID! [  !admin link <discordID> <riotID>  ]")
+			return
+		addRoster(target)
+		linked = linkRoster(target, riotID)
+		if linked:
+			await ctx.send(f"'{riotID}' has been linked to '{target}'!")
+		else:
+			await ctx.send(f"'{riotID}' is already linked with '{target}' or another player!")
+
+	if command == 'unlink':
+		if not target or not riotID:
+			await ctx.channel.send("Need to specify a target and/or riotID! [  !admin unlink <discordID> <riotID>  ]")
+			return
+		addRoster(target)
+		unlinked = unlinkRoster(target, riotID)
+		if unlinked:
+			await ctx.send(f"'{riotID}' has been unlinked from {target}!")
+		else:
+			await ctx.send(f"'{riotID}' is already unlinked from {target}!")
+
+	if command == 'leave':
+		if not target:
+			await ctx.channel.send("Need to specify a target! [  !admin leave <discordID>  ]")
+			return
+		left = leaveRoster(target)
+		if left:
+			await ctx.send(f"'{target}' has left ValBot's roster! :sob:")
+		else:
+			await ctx.send(f"'{target}' is already not on ValBot's roster! :sob:")
+
 bot.run(TOKEN)
