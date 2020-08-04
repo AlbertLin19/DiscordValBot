@@ -2,7 +2,7 @@ import os
 import discord
 from discord.ext import commands
 import extract
-from storage import writeRoster, getRoster, addRoster, leaveRoster, linkRoster, unlinkRoster, getHistory, writeHistory, saveMatch, getPlayerStats, getMatch, getMatches, deleteMatch, getAvgPlayerStats, getAvgRosterStats 
+from storage import writeRoster, getRoster, addRoster, leaveRoster, linkRoster, unlinkRoster, getHistory, writeHistory, saveMatch, getPlayerStats, getMatch, getMatches, deleteMatch, getAvgPlayerStats, getAvgRosterStats, getMedRosterStats, cleanImgDir, getMMR 
 import datetime
 import requests
 import cv2
@@ -99,6 +99,7 @@ async def upload(ctx):
     path_name = os.path.join(IMG_PATH, f'{time}.png')
     with open(path_name, 'wb') as f:
         f.write(requests.get(attach.url).content)
+        cleanImgDir()
     current_img = path_name
     await ctx.channel.send('```Image downloaded as "' + time + '.png"```')
     await ctx.channel.send('```Either !process or !cancel...```')
@@ -120,6 +121,7 @@ async def process(ctx):
 		await ctx.channel.send(f'```{error}```')
 	post_path = os.path.join(POST_IMG_PATH, (current_img.split("/")[-1]).split(".")[0] + '_post.png')
 	cv2.imwrite(post_path, img)
+	cleanImgDir()
 	await ctx.channel.send('```done! sending results...```')
 	await ctx.channel.send(file=discord.File(post_path))
 	if error:
@@ -267,35 +269,78 @@ async def match(ctx, matchNum = None):
 	matchStats = getMatch(timeKey)
 	matchString = ''
 	for rosterID, stats in matchStats.items():
-		matchString += f"{f'{rosterID}:'.ljust(22)}{stats}\n"
+		matchString += f"{f'{rosterID}:'.ljust(32)}{stats}\n"
 	fields = ['W', 's', 'K', 'D', 'A', 'e', 'b', 'p', 'd']
 	path = os.path.join(IMG_PATH, timeKey + '.png')
 	await ctx.channel.send(file=discord.File(path))
 	await ctx.channel.send(f'```{f"{reformatted}".ljust(22)}{fields}\n{matchString}```')
 
-@bot.command(name='stats', help="List stats <self>/<server>")
+@bot.command(name='stats', help="List stats <all>/<self>/<server>/<rosterID>")
 @commands.check(checkChannelActive)
 async def stats(ctx, statType = None):
-	if not statType or (statType != 'self' and statType != 'server'):
-		await ctx.channel.send('```Please specify a stat option! [  !stats <self>/<server>  ]```')
+	if not statType:
+		await ctx.channel.send('```Please specify a stat option! [  !stats <all>/<self>/<server>/<rosterID>  ]```')
 		return
 	if statType == 'self':
 		all_stats = getPlayerStats(ctx.author.name)
-		avg_stats = np.round(getAvgPlayerStats(ctx.author.name), 2)
+		avg_stats = getAvgPlayerStats(ctx.author.name)
+		if not np.any(avg_stats):
+			await ctx.channel.send('```No stats...```')
+		avg_stats = np.round(avg_stats, 2)
 		all_stat_string = ''
-		stat_list = ['Win Rate', 'Cbt Score', 'K', 'D', 'A', 'Econ', 'FBs', 'Plts', 'Dfs']
+		stat_list = ['W%', 'Cbt', 'K', 'D', 'A', 'Econ', 'FBs', 'Plts', 'Dfs']
 		for timeKey in all_stats:
 			reformatted = datetime.datetime.strptime(timeKey,'%Y%m%d_%H%M').strftime("%B %#d, %Y at %#I:%M")
 			all_stat_string += f'{reformatted}: {all_stats[timeKey]}\n'
 
-		await ctx.channel.send(f'```STATS FOR {ctx.author.name}\nLegend:\n{stat_list}\nAvg:\n{avg_stats}\n\nTotal:\n{all_stat_string}```')
+		await ctx.channel.send(f'```STATS FOR {ctx.author.name}\nLegend:\n{stat_list}\nAvg:\n{avg_stats}\n\nAll:\n{all_stat_string}```')
 
-	if statType == 'server':
-		server_stats = np.round(getAvgRosterStats(), 2)
+	elif statType == 'server':
+		server_avgs = getAvgRosterStats()
+		if not np.any(server_avgs):
+			await ctx.channel.send('```No stats...```')
+		server_avgs = np.round(server_avgs, 2)
+		server_meds = getMedRosterStats()
 		stat_list = ['Win Rate', 'Cbt Score', 'K', 'D', 'A', 'Econ', 'FBs', 'Plts', 'Dfs']
-		await ctx.channel.send(f'```STATS FOR SERVER\nLegend:\n{stat_list}\nAvg:\n{server_stats}```')
+		await ctx.channel.send(f'```STATS FOR SERVER\nLegend:\n{stat_list}\nAvg:\n{server_avgs}\nMedians of the Avgs:\n{server_meds}```')
+
+	elif statType in getRoster():
+		all_stats = getPlayerStats(statType)
+		avg_stats = getAvgPlayerStats(statType)
+		if not np.any(avg_stats):
+			await ctx.channel.send('```No stats...```')
+		avg_stats = np.round(avg_stats, 2)
+		all_stat_string = ''
+		stat_list = ['W%', 'Cbt', 'K', 'D', 'A', 'Econ', 'FBs', 'Plts', 'Dfs']
+		for timeKey in all_stats:
+			reformatted = datetime.datetime.strptime(timeKey,'%Y%m%d_%H%M').strftime("%B %#d, %Y at %#I:%M")
+			all_stat_string += f'{reformatted}: {all_stats[timeKey]}\n'
+
+		await ctx.channel.send(f'```STATS FOR {statType}\nLegend:\n{stat_list}\nAvg:\n{avg_stats}\n\nAll:\n{all_stat_string}```')
+
+	elif statType == 'all':
+		roster = getRoster()
+		statString = ''
+		legend = ['Cmbt', 'Econ', 'FBlds']
+		indices = [1, 5, 6]
+		for rosterID in roster:
+			MMR = getMMR(rosterID)
+			avg_stats = getAvgPlayerStats(rosterID)
+			if np.any(MMR) and np.any(avg_stats):
+				MMR = np.round(MMR, 2)
+				avg_stats = np.round(avg_stats, 2)
+				statString += f"{f'{rosterID}:'.ljust(30)}{f'{MMR}'.ljust(8)} {[avg_stats[index] for index in indices]}\n"
+			else:
+				statString += f"{f'{rosterID}:'.ljust(30)}{f'None'.ljust(8)} [None]\n"
+		await ctx.channel.send(f'```Avg Stats for All:\n\n{f"Legend:".ljust(30)}{f"MMR".ljust(8)}{legend}\n{statString}```')
 
 
+
+	else:
+		await ctx.channel.send('```Not a valid command or rosterID!```')
+		roster = getRoster()
+		await ctx.channel.send(f'```Valid rosterIDs:\n{list(roster.keys())}```')
+		return
 
 whitelist = ['A_L__'] # people who can use admin commands
 @bot.command(name='admin', help='run commands as admin')
@@ -364,14 +409,7 @@ async def delete(ctx, matchNum = None):
 	deleted = deleteMatch(timeKey)
 	if deleted:
 		await ctx.channel.send(f'Deleted {reformatted}!')
-		path = os.path.join(IMG_PATH, timeKey + '.png')
-		post_path = os.path.join(IMG_PATH, timeKey + '_post.png')
-		if os.path.exists(path):
-			print(f'Removed file: {path}')
-			os.remove(path)
-		if os.path.exists(post_path):
-			print(f'Removed file: {post_path}')
-			os.remove(post_path)
+		cleanImgDir()
 
 	else:
 		await ctx.channel.send(f'Could not find {reformatted}!')

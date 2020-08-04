@@ -6,6 +6,8 @@ import numpy as np
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROSTER_PATH = os.path.join(BASE_DIR, 'ValBot/data/roster.txt')
 HISTORY_PATH = os.path.join(BASE_DIR, 'ValBot/data/history.txt')
+IMG_PATH = os.path.join(BASE_DIR, 'ValBot/imgs/pre/')
+POST_IMG_PATH = os.path.join(BASE_DIR, 'ValBot/imgs/post/')
 
 # write a roster out
 def writeRoster(roster):
@@ -164,4 +166,42 @@ def getAvgRosterStats():
 	matrix = np.array(arrays)
 	return np.sum(matrix, axis=0) / matrix.shape[0]
 
+# get median of all the roster's average stats
+def getMedRosterStats():
+	roster = getRoster()
+	arrays = []
+	for rosterID in roster:
+		avgPlayerStats = getAvgPlayerStats(rosterID)
+		if not np.any(avgPlayerStats):
+			continue
+		arrays.append(avgPlayerStats)
+	if len(arrays) == 0:
+		return None
+	matrix = np.array(arrays)
+	return np.median(matrix, axis=0)
 
+# clean the image files
+def cleanImgDir():
+	timeKeys = getMatches()
+	num_removed = 0
+	for img in os.listdir(IMG_PATH):
+		if img.split('.')[0] not in timeKeys:
+			os.remove(os.path.join(IMG_PATH, img))
+			num_removed+=1
+	for img in os.listdir(POST_IMG_PATH):
+		if img.split('_post.')[0] not in timeKeys:
+			os.remove(os.path.join(POST_IMG_PATH, img))
+			num_removed+=1
+	return num_removed
+
+# get MMR of rosterID
+def getMMR(rosterID):
+	avg_stats = getAvgPlayerStats(rosterID)
+	weights = np.asarray([0, 0.5, 0, 0, 0, 0.3, 0.2, 0, 0])
+	avg_roster_stats = getAvgRosterStats()
+
+	if not np.any(avg_stats) or not np.any(avg_roster_stats):
+		return None
+
+	# MMR is 1000*sum(weight* stat/avg roster stat) 
+	return 1000*np.sum(np.multiply(weights, np.divide(avg_stats, avg_roster_stats)))
