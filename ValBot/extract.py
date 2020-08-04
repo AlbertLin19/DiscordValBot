@@ -185,13 +185,16 @@ def extract(img_path):
 			print(f'Data not associated properly for {key}! ERROR')
 			return [], imRects, f'Data not associated properly for {key}! ERROR'
 		stats = data[key][2:]
+		# make sure these are processed as NUMBERS
+		for i in range(len(stats)):
+			stats[i] = int(stats[i])
 		xs = stats[0::2]
 		nums = stats[1::2]
-		indices = np.argsort(xs)
+		indices = np.argsort(xs) ###NOTE: THIS HOLDS, FOR THE SORTED LIST, THE INDICES OF THE ORIGINAL LIST 
 		newStats = [None] * (len(nums) + 1)
 		newStats[0] = data[key][1]
-		for i in range(len(nums)):
-			newStats[indices[i]+1] = nums[i]
+		for i in range(len(indices)):
+			newStats[i+1] = nums[indices[i]]
 		data[key] = newStats
 
 	print('FINAL DATA:')

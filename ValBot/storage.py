@@ -118,4 +118,4 @@ def getMatches():
 	matches = []
 	for rosterID, matchDict in history.items():
 		matches.extend(matchDict.keys())
-	return set(matches)
+	return sorted(set(matches))

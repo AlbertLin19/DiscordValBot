@@ -204,7 +204,7 @@ async def process(ctx):
 
 		save_string = ''
 		for rosterID, stats in relevant_data.items():
-			save_string += f'{rosterID}: {f"WON" if stats[0] == 1 else f"LOST"} {stats[1:]}\n'
+			save_string += f'{f"{rosterID}:".ljust(25)}{f"WON" if stats[0] == 1 else f"LOST"} {stats[1:]}\n'
 
 
 		await ctx.channel.send(f'```SAVING:\n{save_string}```')
@@ -247,6 +247,24 @@ async def matches(ctx):
 		string += f"{i}. [{reformatted}]\n"
 	await ctx.channel.send(f'```Stored Matches:\n{string}```')
 
+@bot.command(name='match', help='View match <#>')
+@commands.check(checkChannelActive)
+async def match(ctx, matchNum = None):
+	if not matchNum:
+		await ctx.channel.send('```Please specify a match number (from !matches) [  !match <num>  ]```')
+		return
+	matches = getMatches()
+	if not matchNum.isdigit() or int(matchNum) > len(matches) or int(matchNum) < 1:
+		await ctx.channel.send('```Please specify a valid match number (from !matches) [  !match <num>  ]```')
+		return
+	timeKey = matches[int(matchNum)-1]
+	reformatted = datetime.datetime.strptime(timeKey,'%Y%m%d_%H%M').strftime("%B %#d, %Y at %#I:%M")
+	matchStats = getMatch(timeKey)
+	matchString = ''
+	for rosterID, stats in matchStats.items():
+		matchString += f"{f'{rosterID}:'.ljust(25)}{stats}"
+	fields = ['WON', 'score', 'K', 'D', 'A', 'econ', 'bloods', 'plants', 'defuses']
+	await ctx.channel.send(f'```{f"{reformatted}".ljust(25)}{fields}\n{matchString}```')
 
 whitelist = ['A_L__'] # people who can use admin commands
 @bot.command(name='admin', help='run commands as admin')
