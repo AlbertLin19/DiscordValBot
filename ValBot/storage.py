@@ -1,5 +1,6 @@
 import pickle
 import os
+import numpy as np
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -63,6 +64,11 @@ def unlinkRoster(player, riotID):
 
 # write match history out
 def writeHistory(history):
+	# make sure everything is an int
+	for rosterID, matchDict in history.items():
+		for timeKey, stats in matchDict.items():
+			matchDict[timeKey] = [int(stat) for stat in stats]
+
 	with open(HISTORY_PATH, 'wb') as file:
 		pickle.dump(history, file)
 			
@@ -130,3 +136,32 @@ def deleteMatch(timeKey):
 			del dictOfMatches[timeKey]
 	writeHistory(history)
 	return found
+
+# get avg player stats
+def getAvgPlayerStats(rosterID):
+	player_stats = getPlayerStats(rosterID)
+	if not player_stats:
+		return None
+	arrays = []
+	for timeKey, stats in player_stats.items():
+		arrays.append(stats)
+	if len(arrays) == 0:
+		return None
+	matrix = np.array(arrays)
+	return np.sum(matrix, axis=0) / matrix.shape[0]
+
+# get avg roster stats
+def getAvgRosterStats():
+	roster = getRoster()
+	arrays = []
+	for rosterID in roster:
+		avgPlayerStats = getAvgPlayerStats(rosterID)
+		if not np.any(avgPlayerStats):
+			continue
+		arrays.append(avgPlayerStats)
+	if len(arrays) == 0:
+		return None
+	matrix = np.array(arrays)
+	return np.sum(matrix, axis=0) / matrix.shape[0]
+
+

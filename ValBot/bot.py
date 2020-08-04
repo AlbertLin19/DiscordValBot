@@ -2,10 +2,11 @@ import os
 import discord
 from discord.ext import commands
 import extract
-from storage import writeRoster, getRoster, addRoster, leaveRoster, linkRoster, unlinkRoster, getHistory, writeHistory, saveMatch, getPlayerStats, getMatch, getMatches, deleteMatch 
+from storage import writeRoster, getRoster, addRoster, leaveRoster, linkRoster, unlinkRoster, getHistory, writeHistory, saveMatch, getPlayerStats, getMatch, getMatches, deleteMatch, getAvgPlayerStats, getAvgRosterStats 
 import datetime
 import requests
 import cv2
+import numpy as np
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -151,7 +152,11 @@ async def process(ctx):
 
 		elif user_input[0:4] == 'edit':
 			# store the change, print all existing changes
-			name, attribute, value = (user_input.split(' ')[1]).split(':')
+			try:
+				name, attribute, value = (user_input.split(' ', 1)[1]).split(':', 2)
+			except:
+				await ctx.channel.send(f'```could not parse, please try again```')
+				continue
 			if name not in data:
 				await ctx.channel.send(f'```{name} not a valid name, please try again```')
 				continue
@@ -268,33 +273,29 @@ async def match(ctx, matchNum = None):
 	await ctx.channel.send(file=discord.File(path))
 	await ctx.channel.send(f'```{f"{reformatted}".ljust(22)}{fields}\n{matchString}```')
 
-@bot.command(name='delete', help='Delete match <#>')
+@bot.command(name='stats', help="List stats <self>/<server>")
 @commands.check(checkChannelActive)
-async def delete(ctx, matchNum = None):
-	if not matchNum:
-		await ctx.channel.send('```Please specify a match number (from !matches) [  !delete <num>  ]```')
+async def stats(ctx, statType = None):
+	if not statType or (statType != 'self' and statType != 'server'):
+		await ctx.channel.send('```Please specify a stat option! [  !stats <self>/<server>  ]```')
 		return
-	matches = getMatches()
-	if not matchNum.isdigit() or int(matchNum) > len(matches) or int(matchNum) < 1:
-		await ctx.channel.send('```Please specify a valid match number (from !matches) [  !delete <num>  ]```')
-		return
-	timeKey = matches[int(matchNum)-1]
-	reformatted = datetime.datetime.strptime(timeKey,'%Y%m%d_%H%M').strftime("%B %#d, %Y at %#I:%M")
-	
-	deleted = deleteMatch(timeKey)
-	if deleted:
-		await ctx.channel.send(f'Deleted {reformatted}!')
-		path = os.path.join(IMG_PATH, timeKey + '.png')
-		post_path = os.path.join(IMG_PATH, timeKey + '_post.png')
-		if os.path.exists(path):
-			print(f'Removed file: {path}')
-			os.remove(path)
-		if os.path.exists(post_path):
-			print(f'Removed file: {post_path}')
-			os.remove(post_path)
+	if statType == 'self':
+		all_stats = getPlayerStats(ctx.author.name)
+		avg_stats = np.round(getAvgPlayerStats(ctx.author.name), 2)
+		all_stat_string = ''
+		stat_list = ['Win Rate', 'Cbt Score', 'K', 'D', 'A', 'Econ', 'FBs', 'Plts', 'Dfs']
+		for timeKey in all_stats:
+			reformatted = datetime.datetime.strptime(timeKey,'%Y%m%d_%H%M').strftime("%B %#d, %Y at %#I:%M")
+			all_stat_string += f'{reformatted}: {all_stats[timeKey]}\n'
 
-	else:
-		await ctx.channel.send(f'Could not find {reformatted}!')
+		await ctx.channel.send(f'```STATS FOR {ctx.author.name}\nLegend:\n{stat_list}\nAvg:\n{avg_stats}\n\nTotal:\n{all_stat_string}```')
+
+	if statType == 'server':
+		server_stats = np.round(getAvgRosterStats(), 2)
+		stat_list = ['Win Rate', 'Cbt Score', 'K', 'D', 'A', 'Econ', 'FBs', 'Plts', 'Dfs']
+		await ctx.channel.send(f'```STATS FOR SERVER\nLegend:\n{stat_list}\nAvg:\n{server_stats}```')
+
+
 
 whitelist = ['A_L__'] # people who can use admin commands
 @bot.command(name='admin', help='run commands as admin')
@@ -342,5 +343,37 @@ async def admin(ctx, command=None, target=None, riotID=None):
 			await ctx.send(f"```'{target}' has left ValBot's roster! 😭```")
 		else:
 			await ctx.send(f"```'{target}' is already not on ValBot's roster! 😭```")
+
+# only allow whitelist to use this commands
+@bot.command(name='delete', help='Delete match <#>')
+@commands.check(checkChannelActive)
+async def delete(ctx, matchNum = None):
+	if ctx.author.name not in whitelist:
+		await ctx.channel.send("```Do 100 pushups a day and perhaps one day, you'll have this power as your own!```")
+		return
+	if not matchNum:
+		await ctx.channel.send('```Please specify a match number (from !matches) [  !delete <num>  ]```')
+		return
+	matches = getMatches()
+	if not matchNum.isdigit() or int(matchNum) > len(matches) or int(matchNum) < 1:
+		await ctx.channel.send('```Please specify a valid match number (from !matches) [  !delete <num>  ]```')
+		return
+	timeKey = matches[int(matchNum)-1]
+	reformatted = datetime.datetime.strptime(timeKey,'%Y%m%d_%H%M').strftime("%B %#d, %Y at %#I:%M")
+	
+	deleted = deleteMatch(timeKey)
+	if deleted:
+		await ctx.channel.send(f'Deleted {reformatted}!')
+		path = os.path.join(IMG_PATH, timeKey + '.png')
+		post_path = os.path.join(IMG_PATH, timeKey + '_post.png')
+		if os.path.exists(path):
+			print(f'Removed file: {path}')
+			os.remove(path)
+		if os.path.exists(post_path):
+			print(f'Removed file: {post_path}')
+			os.remove(post_path)
+
+	else:
+		await ctx.channel.send(f'Could not find {reformatted}!')
 
 bot.run(TOKEN)
