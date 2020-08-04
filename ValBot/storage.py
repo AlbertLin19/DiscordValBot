@@ -119,3 +119,14 @@ def getMatches():
 	for rosterID, matchDict in history.items():
 		matches.extend(matchDict.keys())
 	return sorted(set(matches))
+
+# delete entries using timeKey
+def deleteMatch(timeKey):
+	history = getHistory()
+	found = False
+	for rosterID, dictOfMatches in history.items():
+		if timeKey in dictOfMatches:
+			found = True
+			del dictOfMatches[timeKey]
+	writeHistory(history)
+	return found

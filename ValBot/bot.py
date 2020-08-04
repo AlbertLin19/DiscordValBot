@@ -2,7 +2,7 @@ import os
 import discord
 from discord.ext import commands
 import extract
-from storage import writeRoster, getRoster, addRoster, leaveRoster, linkRoster, unlinkRoster, getHistory, writeHistory, saveMatch, getPlayerStats, getMatch, getMatches 
+from storage import writeRoster, getRoster, addRoster, leaveRoster, linkRoster, unlinkRoster, getHistory, writeHistory, saveMatch, getPlayerStats, getMatch, getMatches, deleteMatch 
 import datetime
 import requests
 import cv2
@@ -143,7 +143,7 @@ async def process(ctx):
 	attributes = ['color', 'score', 'K', 'D', 'A', 'econ', 'bloods', 'plants', 'defuses', 'name']
 	change_log = {} # formatted as nested dictionary, player key then attribute key
 	while user_input != 'confirm' and user_input != 'cancel':
-		await ctx.channel.send(f'```RESPOND OPTIONS: [  confirm  ],\t [  cancel  ],\t [  edit <name>:<attribute>:<value>  ]\n\npossible names\n{list(data.keys())}\n\neditable attributes\n{attributes}```')
+		await ctx.channel.send(f'```RESPOND OPTIONS: [confirm], [cancel], [edit <name>:<attribute>:<value>]\n\npossible names\n{list(data.keys())}\n\neditable attributes\n{attributes}```')
 		user_input = str((await bot.wait_for('message', check=check)).content)
 
 		if user_input == 'confirm' or user_input == 'cancel':
@@ -204,7 +204,7 @@ async def process(ctx):
 
 		save_string = ''
 		for rosterID, stats in relevant_data.items():
-			save_string += f'{f"{rosterID}:".ljust(25)}{f"WON" if stats[0] == 1 else f"LOST"} {stats[1:]}\n'
+			save_string += f'{f"{rosterID}:".ljust(15)}{f"WON" if stats[0] == 1 else f"LOST"} {stats[1:]}\n'
 
 
 		await ctx.channel.send(f'```SAVING:\n{save_string}```')
@@ -262,9 +262,39 @@ async def match(ctx, matchNum = None):
 	matchStats = getMatch(timeKey)
 	matchString = ''
 	for rosterID, stats in matchStats.items():
-		matchString += f"{f'{rosterID}:'.ljust(25)}{stats}"
-	fields = ['WON', 'score', 'K', 'D', 'A', 'econ', 'bloods', 'plants', 'defuses']
-	await ctx.channel.send(f'```{f"{reformatted}".ljust(25)}{fields}\n{matchString}```')
+		matchString += f"{f'{rosterID}:'.ljust(22)}{stats}\n"
+	fields = ['W', 's', 'K', 'D', 'A', 'e', 'b', 'p', 'd']
+	path = os.path.join(IMG_PATH, timeKey + '.png')
+	await ctx.channel.send(file=discord.File(path))
+	await ctx.channel.send(f'```{f"{reformatted}".ljust(22)}{fields}\n{matchString}```')
+
+@bot.command(name='delete', help='Delete match <#>')
+@commands.check(checkChannelActive)
+async def delete(ctx, matchNum = None):
+	if not matchNum:
+		await ctx.channel.send('```Please specify a match number (from !matches) [  !delete <num>  ]```')
+		return
+	matches = getMatches()
+	if not matchNum.isdigit() or int(matchNum) > len(matches) or int(matchNum) < 1:
+		await ctx.channel.send('```Please specify a valid match number (from !matches) [  !delete <num>  ]```')
+		return
+	timeKey = matches[int(matchNum)-1]
+	reformatted = datetime.datetime.strptime(timeKey,'%Y%m%d_%H%M').strftime("%B %#d, %Y at %#I:%M")
+	
+	deleted = deleteMatch(timeKey)
+	if deleted:
+		await ctx.channel.send(f'Deleted {reformatted}!')
+		path = os.path.join(IMG_PATH, timeKey + '.png')
+		post_path = os.path.join(IMG_PATH, timeKey + '_post.png')
+		if os.path.exists(path):
+			print(f'Removed file: {path}')
+			os.remove(path)
+		if os.path.exists(post_path):
+			print(f'Removed file: {post_path}')
+			os.remove(post_path)
+
+	else:
+		await ctx.channel.send(f'Could not find {reformatted}!')
 
 whitelist = ['A_L__'] # people who can use admin commands
 @bot.command(name='admin', help='run commands as admin')
