@@ -426,7 +426,7 @@ async def clear(ctx):
 
 @bot.command(name='lobby', help='List lobby')
 @commands.check(checkChannelActive)
-async def lobby(ctx):
+async def listLobby(ctx):
 	await ctx.channel.send(f'```Lobby: {lobby}```')
 
 @bot.command(name='teams', help='form teams out of lobby based on MMR')
@@ -532,7 +532,7 @@ async def teams(ctx):
 
 
 
-@bot.command(name='randomLobby', help='random lobby of ten')
+@bot.command(name='random', help='random lobby of ten')
 @commands.check(checkChannelActive)
 async def randomLobby(ctx):
 	global lobby
