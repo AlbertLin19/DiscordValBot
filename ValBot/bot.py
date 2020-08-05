@@ -7,6 +7,8 @@ import datetime
 import requests
 import cv2
 import numpy as np
+from itertools import combinations
+import random
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -89,6 +91,7 @@ current_img = ''  # path to current img to handle
 @bot.command(name='upload', help='Upload post game image for OCR')
 @commands.check(checkChannelActive)
 async def upload(ctx):
+    cleanImgDir()
     global current_img
     time = datetime.datetime.now().strftime('%Y%m%d_%H%M')
     if len(ctx.message.attachments) == 0:
@@ -99,7 +102,6 @@ async def upload(ctx):
     path_name = os.path.join(IMG_PATH, f'{time}.png')
     with open(path_name, 'wb') as f:
         f.write(requests.get(attach.url).content)
-        cleanImgDir()
     current_img = path_name
     await ctx.channel.send('```Image downloaded as "' + time + '.png"```')
     await ctx.channel.send('```Either !process or !cancel...```')
@@ -121,7 +123,6 @@ async def process(ctx):
 		await ctx.channel.send(f'```{error}```')
 	post_path = os.path.join(POST_IMG_PATH, (current_img.split("/")[-1]).split(".")[0] + '_post.png')
 	cv2.imwrite(post_path, img)
-	cleanImgDir()
 	await ctx.channel.send('```done! sending results...```')
 	await ctx.channel.send(file=discord.File(post_path))
 	if error:
@@ -341,6 +342,173 @@ async def stats(ctx, statType = None):
 		roster = getRoster()
 		await ctx.channel.send(f'```Valid rosterIDs:\n{list(roster.keys())}```')
 		return
+
+lobby = []
+@bot.command(name='add', help='add yourself to lobby (or specify a @discordID)')
+@commands.check(checkChannelActive)
+async def add(ctx, discordID = None):
+	global lobby
+	if not discordID:
+		discordID = ctx.author.id
+	elif discordID[0] != '<' or discordID[-1] != '>':
+		await ctx.channel.send('```Please use a @mention!```')
+		return
+	else:
+		discordID = discordID.split('<@')[1].split('>')[0]
+		if discordID[0] == '!':
+			discordID = discordID[1:]
+	discordID = int(discordID)
+	recognized = False
+	for user in bot.users:
+		if discordID == user.id:
+			recognized = True
+	if not recognized:
+		await ctx.channel.send('```User not recognized!```')
+		return
+	user = await bot.fetch_user(discordID)
+	username = user.name
+	if username in lobby:
+		await ctx.channel.send(f'```{username} already in lobby!```')
+		return
+	lobby.append(username)
+	await ctx.channel.send(f'```Lobby: {lobby}```')
+
+@bot.command(name='remove', help='remove yourself from lobby (or specify a @discordID)')
+@commands.check(checkChannelActive)
+async def remove(ctx, discordID = None):
+	global lobby
+	if not discordID:
+		discordID = ctx.author.id
+	elif discordID[0] != '<' or discordID[-1] != '>':
+		await ctx.channel.send('```Please use a @mention!```')
+		return
+	else:
+		discordID = discordID.split('<@')[1].split('>')[0]
+		if discordID[0] == '!':
+			discordID = discordID[1:]
+	discordID = int(discordID)
+	recognized = False
+	for user in bot.users:
+		if discordID == user.id:
+			recognized = True
+	if not recognized:
+		await ctx.channel.send('```User not recognized!```')
+		return
+	user = await bot.fetch_user(discordID)
+	username = user.name
+	if username not in lobby:
+		await ctx.channel.send(f'```{username} already not in lobby!```')
+		return
+	lobby.remove(username)
+	await ctx.channel.send(f'```Lobby: {lobby}```')
+
+# add current voice chat to the lobby
+@bot.command(name='chat', help='Add current voice chat members to the lobby')
+@commands.check(checkChannelActive)
+async def chat(ctx):
+	global lobby
+	if not ctx.message.author.voice.channel:
+		await ctx.channel.send('```Not in a chat currently!```')
+		return
+	members = ctx.message.author.voice.channel.members
+	for member in members:
+		if member.name in lobby:
+			continue
+		lobby.append(member.name)
+	await ctx.channel.send(f'```Lobby: {lobby}```')
+
+@bot.command(name='clear', help='Clear the lobby')
+@commands.check(checkChannelActive)
+async def clear(ctx):
+	global lobby
+	lobby = []
+	await ctx.channel.send(f'```Lobby: {lobby}```')
+
+@bot.command(name='lobby', help='List lobby')
+@commands.check(checkChannelActive)
+async def lobby(ctx):
+	await ctx.channel.send(f'```Lobby: {lobby}```')
+
+@bot.command(name='teams', help='form teams based on MMR')
+@commands.check(checkChannelActive)
+async def teams(ctx):
+	# get user input to confirm, cancel, or edit
+	def check(message):
+		return message.author == ctx.author and message.channel == ctx.channel
+
+	global lobby
+	MMRs = []   # parallel array to lobby
+	for i in range(len(lobby)):
+		rosterID = lobby[i]
+		MMR = getMMR(rosterID)
+		if not MMR:
+			MMR = ''
+			while not MMR.isdigit():
+				await ctx.channel.send(f"```Please give an MMR for {rosterID}: ```")
+				MMR = str((await bot.wait_for('message', check=check)).content)
+		MMRs.append(int(MMR))
+	MMRs = np.round(MMRs, 2)
+
+	def getMMRString(lobby, MMRs):
+		MMRString = ''
+		for i in range(len(lobby)):
+			MMRString += f"{f'{lobby[i]}'.ljust(28)}: {MMRs[i]}\n"
+		return MMRString
+
+	await ctx.channel.send(f'```{getMMRString(lobby, MMRs)}```')
+
+	user_input = ''
+	if user_input != 'continue':
+		await ctx.channel.send(f'OPTIONS: [continue], [edit rosterID:MMR]')
+		user_input = str((await bot.wait_for('message', check=check)).content)
+
+	indices = [i for i in range(len(MMRs))]
+	possible_teams = list(combinations(indices, 5))
+	# fill up the rest of each tuple in possible teams
+	for i in range(len(possible_teams)):
+		first_five = possible_teams[i]
+		last_five = []
+		for k in range(10):
+			if k not in first_five:
+				last_five.append(k)
+		ten = []
+		ten.extend(first_five)
+		ten.extend(last_five)
+		possible_teams[i] = ten
+
+
+	abs_diffs = [None] * len(possible_teams)
+	for i in range(len(possible_teams)):
+		abs_diffs[i] = abs(np.sum([MMRs[possible_teams[i][x]] for x in range(5)]) - np.sum([MMRs[possible_teams[i][x]] for x in range(5, 10)]))
+	sorted_indices = np.argsort(abs_diffs)
+
+	# get random team from top k and difference (team is indices of lobby)
+	def getRandom(k):
+		index = random.randrange(k)
+		return possible_teams[sorted_indices[index]], abs_diffs[sorted_indices[index]], index
+
+	topk = 3
+	team, diff, index = getRandom(topk)
+	team1 = []
+	team2 = []
+	for i in range(5):
+		team1.append(lobby[team[i]])
+		team2.append(lobby[team[i+5]])
+
+	await ctx.channel.send(f'DREW FROM TOP {topk} BALANCED TEAM COMBOS:\nTeam 1: {team1}\nTeam 2: {team2}\nDiff: {diff}, #{index + 1} balanced')
+
+
+@bot.command(name='randomLobby', help='random lobby of ten')
+@commands.check(checkChannelActive)
+async def randomLobby(ctx):
+	global lobby
+	lobby = []
+	rosterIDs = list(getRoster().keys())
+	while len(lobby) != 10:
+		random_id = rosterIDs[random.randrange(len(rosterIDs))]
+		if random_id not in lobby:
+			lobby.append(random_id)
+	await ctx.channel.send(f'```Lobby: {lobby}```')
 
 whitelist = ['A_L__'] # people who can use admin commands
 @bot.command(name='admin', help='run commands as admin')
