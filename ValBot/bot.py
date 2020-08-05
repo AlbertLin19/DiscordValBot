@@ -153,7 +153,7 @@ async def process(ctx):
 		if user_input == 'confirm' or user_input == 'cancel':
 			continue
 
-		elif user_input[0:4] == 'edit':
+		elif len(user_input) > 4 and user_input[0:4] == 'edit':
 			# store the change, print all existing changes
 			try:
 				name, attribute, value = (user_input.split(' ', 1)[1]).split(':', 2)
@@ -429,7 +429,7 @@ async def clear(ctx):
 async def lobby(ctx):
 	await ctx.channel.send(f'```Lobby: {lobby}```')
 
-@bot.command(name='teams', help='form teams based on MMR')
+@bot.command(name='teams', help='form teams out of lobby based on MMR')
 @commands.check(checkChannelActive)
 async def teams(ctx):
 	# get user input to confirm, cancel, or edit
@@ -437,6 +437,9 @@ async def teams(ctx):
 		return message.author == ctx.author and message.channel == ctx.channel
 
 	global lobby
+	if len(lobby) < 2:
+		await ctx.channel.send('```Need at least 2 people in the lobby!```')
+		return
 	MMRs = []   # parallel array to lobby
 	for i in range(len(lobby)):
 		rosterID = lobby[i]
@@ -458,28 +461,41 @@ async def teams(ctx):
 	await ctx.channel.send(f'```{getMMRString(lobby, MMRs)}```')
 
 	user_input = ''
-	if user_input != 'continue':
+	while user_input != 'continue':
 		await ctx.channel.send(f'OPTIONS: [continue], [edit rosterID:MMR]')
 		user_input = str((await bot.wait_for('message', check=check)).content)
 
+		if len(user_input) < 5 or user_input[0:5] != 'edit ':
+			continue
+		elif user_input[0:5] == 'edit ':
+			selectedID = user_input[5:].split(':')[0]
+			newMMR = user_input[5:].split(':')[1]
+			if selectedID not in lobby:
+				await ctx.channel.send(f'```{selectedID} not in lobby!```')
+				continue
+			if not newMMR.isdigit():
+				await ctx.channel.send(f'```{newMMR} not a number!```')
+				continue
+			MMRs[lobby.index(selectedID)] = newMMR
+			await ctx.channel.send(f'```{getMMRString(lobby, MMRs)}```')
+
 	indices = [i for i in range(len(MMRs))]
-	possible_teams = list(combinations(indices, 5))
+	possible_teams = list(combinations(indices, int(len(lobby)/2))) # drawing half rounded down
 	# fill up the rest of each tuple in possible teams
 	for i in range(len(possible_teams)):
-		first_five = possible_teams[i]
-		last_five = []
-		for k in range(10):
-			if k not in first_five:
-				last_five.append(k)
-		ten = []
-		ten.extend(first_five)
-		ten.extend(last_five)
-		possible_teams[i] = ten
-
+		first_half = possible_teams[i]
+		last_half = []
+		for k in range(len(lobby)):
+			if k not in first_half:
+				last_half.append(k)
+		full = []
+		full.extend(first_half)
+		full.extend(last_half)
+		possible_teams[i] = full
 
 	abs_diffs = [None] * len(possible_teams)
 	for i in range(len(possible_teams)):
-		abs_diffs[i] = abs(np.sum([MMRs[possible_teams[i][x]] for x in range(5)]) - np.sum([MMRs[possible_teams[i][x]] for x in range(5, 10)]))
+		abs_diffs[i] = abs(np.sum([MMRs[possible_teams[i][x]] for x in range(int(len(lobby)/2))]) - np.sum([MMRs[possible_teams[i][x]] for x in range(int(len(lobby)/2), len(lobby))]))
 	sorted_indices = np.argsort(abs_diffs)
 
 	# get random team from top k and difference (team is indices of lobby)
@@ -491,9 +507,10 @@ async def teams(ctx):
 	team, diff, index = getRandom(topk)
 	team1 = []
 	team2 = []
-	for i in range(5):
+	for i in range(int(len(lobby)/2)):
 		team1.append(lobby[team[i]])
-		team2.append(lobby[team[i+5]])
+	for i in range(int(len(lobby)/2), len(lobby)):
+		team2.append(lobby[team[i]])
 
 	await ctx.channel.send(f'DREW FROM TOP {topk} BALANCED TEAM COMBOS:\nTeam 1: {team1}\nTeam 2: {team2}\nDiff: {diff}, #{index + 1} balanced')
 
