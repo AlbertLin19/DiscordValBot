@@ -521,6 +521,16 @@ async def teams(ctx):
 		await ctx.channel.send('```OPTIONS: [move], [redraw], [done]```')
 		user_input = str((await bot.wait_for('message', check=check)).content)
 
+	if user_input == 'move':
+		for user in bot.users:
+			if user.name in team1:
+				# valorant voice chat: 710338314665721946
+				await bot.move_member(user, bot.get_channel('710338314665721946'))
+			elif user.name in team2:
+				# csgo voice chat: 151842995342278656
+				await bot.move_member(user, bot.get_channel('151842995342278656'))
+
+
 
 @bot.command(name='randomLobby', help='random lobby of ten')
 @commands.check(checkChannelActive)
