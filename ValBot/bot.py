@@ -515,22 +515,62 @@ async def teams(ctx):
 
 	user_input = ''
 	while user_input != 'move' and user_input != 'done':
-		topk = 10
+		topk = min(10, len(lobby))
 		team1, team2, diff, index = getTeams(topk)
 		await ctx.channel.send(f'DREW FROM TOP {topk} BALANCED TEAM COMBOS:\nTeam 1: {team1}\nTeam 2: {team2}\nDiff: {diff}, #{index + 1} balanced')
-		await ctx.channel.send('```OPTIONS: [move], [redraw], [done]```')
+		await ctx.channel.send('```OPTIONS: [move], [done], [swap rosterID:rosterID], [any other string will redraw teams]```')
 		user_input = str((await bot.wait_for('message', check=check)).content)
 
+		while len(user_input) > 4 and user_input[0:4] == 'swap':
+			rosterID1 = user_input[5:].split(':')[0]
+			rosterID2 = user_input[5:].split(':')[1]
+
+			if rosterID1 in team1 and rosterID2 in team2:
+				team1[team1.index(rosterID1)] = rosterID2
+				team2[team2.index(rosterID2)] = rosterID1
+			elif rosterID1 in team2 and rosterID2 in team1:
+				team1[team1.index(rosterID2)] = rosterID1
+				team2[team2.index(rosterID1)] = rosterID2
+			await ctx.channel.send(f'Team 1: {team1}\nTeam 2: {team2}')
+			await ctx.channel.send('```OPTIONS: [move], [done], [swap rosterID:rosterID], [any other string will redraw teams]```')
+			user_input = str((await bot.wait_for('message', check=check)).content)
+
+
 	if user_input == 'move':
-		for user in bot.users:
-			if user.name in team1:
+		for member in bot.get_all_members():
+			if member.name in team1:
 				# valorant voice chat: 710338314665721946
-				await bot.move_member(user, bot.get_channel('710338314665721946'))
-			elif user.name in team2:
+				await member.edit(voice_channel=bot.get_channel(710338314665721946))
+			elif member.name in team2:
 				# csgo voice chat: 151842995342278656
-				await bot.move_member(user, bot.get_channel('151842995342278656'))
+				await member.edit(voice_channel=bot.get_channel(151842995342278656))
+		await ctx.channel.send(f'```Teams have been moved to separate calls!```')
 
+@bot.command(name='check', help='check if a 5v5 is possible')
+@commands.check(checkChannelActive)
+async def check(ctx):
+	rosterIDs = getRoster().keys()
+	num_online = 0
+	detected = []
+	for member in bot.get_all_members():
+		if member.name in rosterIDs and (member.status.name == 'online' or member.status.name == 'idle' or member.status.name == 'dnd'):
+			num_online += 1
+			detected.append(member.name)
+	if num_online >= 10:
+		await ctx.channel.send(f'```{num_online} online - TEN MAN POSSIBLE???```')
+	else:
+		await ctx.channel.send(f'```{num_online} online atm!```')
+	await ctx.channel.send(f'```Online: {detected}```')
 
+@bot.command(name='converge', help='add everyone in lobby to same chat')
+@commands.check(checkChannelActive)
+async def converge(ctx):
+	global lobby
+	for member in bot.get_all_members():
+		if member.name in lobby:
+			# valorant voice chat: 710338314665721946
+			await member.edit(voice_channel=bot.get_channel(710338314665721946))
+	await ctx.channel.send(f'```Lobby has converged in chat!```')
 
 @bot.command(name='random', help='random lobby of ten')
 @commands.check(checkChannelActive)
