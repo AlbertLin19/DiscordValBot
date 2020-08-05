@@ -539,7 +539,7 @@ async def teams(ctx):
 				member2 = team2[i] + f' ({MMRs[lobby.index(team2[i])]})'
 			teamsString += member1.ljust(35) + member2.ljust(35) + '\n'
 			i+=1
-		return teamsString
+		return teamsString, abs(np.sum(MMRs1) - np.sum(MMRs2))
 
 
 
@@ -547,7 +547,7 @@ async def teams(ctx):
 	while user_input != 'move' and user_input != 'done':
 		topk = min(10, len(possible_teams))
 		team1, team2, diff, index = getTeams(topk)
-		await ctx.channel.send(f'```DREW FROM TOP {topk} BALANCED TEAM COMBOS:\n{getTeamsString(team1, team2)}\nDiff: {diff} MMR, #{index + 1} balanced```')
+		await ctx.channel.send(f'```DREW FROM TOP {topk} BALANCED TEAM COMBOS:\n{getTeamsString(team1, team2)[0]}\nDiff: {diff} MMR, #{index + 1} balanced```')
 		await ctx.channel.send('```OPTIONS: [move], [done], [swap rosterID:rosterID], [any other string will redraw teams]```')
 		user_input = str((await bot.wait_for('message', check=check)).content)
 
@@ -561,7 +561,7 @@ async def teams(ctx):
 			elif rosterID1 in team2 and rosterID2 in team1:
 				team1[team1.index(rosterID2)] = rosterID1
 				team2[team2.index(rosterID1)] = rosterID2
-			await ctx.channel.send(f'```{getTeamsString(team1, team2)}```')
+			await ctx.channel.send(f'```{getTeamsString(team1, team2)[0]}\nDiff: {getTeamsString(team1, team2)[1]} MMR```')
 			await ctx.channel.send('```OPTIONS: [move], [done], [swap rosterID:rosterID], [any other string will redraw teams]```')
 			user_input = str((await bot.wait_for('message', check=check)).content)
 
