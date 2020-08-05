@@ -513,11 +513,41 @@ async def teams(ctx):
 			team2.append(lobby[team[i]])
 		return team1, team2, diff, index
 
+	def getTeamsString(team1, team2):
+		teamsString = 'Team 1:'.ljust(35) + 'Team 2:'.ljust(35) + '\n'
+		# sort the teams by MMR
+		sorted1 = team1.copy()
+		sorted2 = team2.copy()
+		MMRs1 = [-MMRs[lobby.index(x)] for x in team1]
+		MMRs2 = [-MMRs[lobby.index(x)] for x in team2]
+		sortedIndices1 = np.argsort(MMRs1)
+		sortedIndices2 = np.argsort(MMRs2)
+		for i in range(len(sorted1)):
+			sorted1[i] = team1[sortedIndices1[i]]
+		for i in range(len(sorted2)):
+			sorted2[i] = team2[sortedIndices2[i]]
+		team1 = sorted1
+		team2 = sorted2
+
+		i = 0
+		while i < len(team1) or i < len(team2):
+			member1 = ''
+			member2 = ''
+			if i < len(team1):
+				member1 = team1[i] + f' ({MMRs[lobby.index(team1[i])]})'
+			if i < len(team2):
+				member2 = team2[i] + f' ({MMRs[lobby.index(team2[i])]})'
+			teamsString += member1.ljust(35) + member2.ljust(35) + '\n'
+			i+=1
+		return teamsString
+
+
+
 	user_input = ''
 	while user_input != 'move' and user_input != 'done':
-		topk = min(10, len(lobby))
+		topk = min(10, len(possible_teams))
 		team1, team2, diff, index = getTeams(topk)
-		await ctx.channel.send(f'DREW FROM TOP {topk} BALANCED TEAM COMBOS:\nTeam 1: {team1}\nTeam 2: {team2}\nDiff: {diff}, #{index + 1} balanced')
+		await ctx.channel.send(f'```DREW FROM TOP {topk} BALANCED TEAM COMBOS:\n{getTeamsString(team1, team2)}\nDiff: {diff} MMR, #{index + 1} balanced```')
 		await ctx.channel.send('```OPTIONS: [move], [done], [swap rosterID:rosterID], [any other string will redraw teams]```')
 		user_input = str((await bot.wait_for('message', check=check)).content)
 
@@ -531,7 +561,7 @@ async def teams(ctx):
 			elif rosterID1 in team2 and rosterID2 in team1:
 				team1[team1.index(rosterID2)] = rosterID1
 				team2[team2.index(rosterID1)] = rosterID2
-			await ctx.channel.send(f'Team 1: {team1}\nTeam 2: {team2}')
+			await ctx.channel.send(f'```{getTeamsString(team1, team2)}```')
 			await ctx.channel.send('```OPTIONS: [move], [done], [swap rosterID:rosterID], [any other string will redraw teams]```')
 			user_input = str((await bot.wait_for('message', check=check)).content)
 
@@ -546,9 +576,12 @@ async def teams(ctx):
 				await member.edit(voice_channel=bot.get_channel(151842995342278656))
 		await ctx.channel.send(f'```Teams have been moved to separate calls!```')
 
-@bot.command(name='check', help='check if a 5v5 is possible')
+	elif user_input == 'done':
+		await ctx.channel.send(f'```Done, exiting!```')
+
+@bot.command(name='online', help='check if a 5v5 is possible')
 @commands.check(checkChannelActive)
-async def check(ctx):
+async def online(ctx):
 	rosterIDs = getRoster().keys()
 	num_online = 0
 	detected = []
