@@ -503,16 +503,23 @@ async def teams(ctx):
 		index = random.randrange(k)
 		return possible_teams[sorted_indices[index]], abs_diffs[sorted_indices[index]], index
 
-	topk = 3
-	team, diff, index = getRandom(topk)
-	team1 = []
-	team2 = []
-	for i in range(int(len(lobby)/2)):
-		team1.append(lobby[team[i]])
-	for i in range(int(len(lobby)/2), len(lobby)):
-		team2.append(lobby[team[i]])
+	def getTeams(topk):
+		team, diff, index = getRandom(topk)
+		team1 = []
+		team2 = []
+		for i in range(int(len(lobby)/2)):
+			team1.append(lobby[team[i]])
+		for i in range(int(len(lobby)/2), len(lobby)):
+			team2.append(lobby[team[i]])
+		return team1, team2, diff, index
 
-	await ctx.channel.send(f'DREW FROM TOP {topk} BALANCED TEAM COMBOS:\nTeam 1: {team1}\nTeam 2: {team2}\nDiff: {diff}, #{index + 1} balanced')
+	user_input = ''
+	while user_input != 'move' and user_input != 'done':
+		topk = 10
+		team1, team2, diff, index = getTeams(topk)
+		await ctx.channel.send(f'DREW FROM TOP {topk} BALANCED TEAM COMBOS:\nTeam 1: {team1}\nTeam 2: {team2}\nDiff: {diff}, #{index + 1} balanced')
+		await ctx.channel.send('```OPTIONS: [move], [redraw], [done]```')
+		user_input = str((await bot.wait_for('message', check=check)).content)
 
 
 @bot.command(name='randomLobby', help='random lobby of ten')
